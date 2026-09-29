@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Space · Ming</title>
+
+    <style>
+        :root {
+            --bg: #f7f7f5;
+            --surface: rgba(255, 255, 255, 0.88);
+            --surface-strong: #ffffff;
+            --text: #171717;
+            --muted: #777;
+            --line: #e8e8e4;
+            --accent: #111;
+            --soft: #f1f1ed;
+            --danger: #b42318;
+            --shadow: 0 18px 50px rgba(0, 0, 0, 0.06);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at 10% 0%, #ffffff 0, transparent 32%),
+                radial-gradient(circle at 90% 10%, #ecece7 0, transparent 30%),
+                var(--bg);
+            color: var(--text);
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                "Noto Sans KR",
+                sans-serif;
+        }
+
+        button {
+            font: inherit;
+        }
+
+        .page {
+            width: min(1080px, calc(100% - 40px));
+            margin: 0 auto;
+            padding: 36px 0 72px;
+        }
+
+        /* Header */
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 72px;
+        }
+
+        .brand {
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+        }
+
+        .back-link {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s ease;
+        }
+
+        .back-link:hover {
+            color: var(--text);
+        }
+
+        /* Hero */
+
+        .hero {
+            margin-bottom: 42px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .eyebrow::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #171717;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(42px, 7vw, 76px);
+            line-height: 0.98;
+            letter-spacing: -0.055em;
+        }
+
+        .hero-description {
+            max-width: 620px;
+            margin: 24px 0 0;
+            color: var(--muted);
+            font-size: 16px;
+            line-height: 1.8;
+        }
+
+        /* Auth card */
+
+        .auth-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            padding: 22px 24px;
+            margin-bottom: 18px;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            background: var(--surface);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(12px);
+        }
+
+        .auth-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .auth-icon {
+            display: grid;
+            place-items: center;
+            width: 46px;
+            height: 46px;
+            flex: 0 0 46px;
+            border-radius: 14px;
+            background: #111;
+            color: white;
+            font-size: 19px;
+        }
+
+        .auth-label {
+            margin: 0 0 4px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            color: var(--muted);
+        }
+
+        .auth-user {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .auth-status {
+            font-size: 13px;
+            color: #555;
+        }
+
+        /* Content grid */
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1.35fr 0.65fr;
+            gap: 18px;
+        }
+
+        .card {
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            background: var(--surface-strong);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 25px 27px 20px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .card-label {
+            margin: 0 0 7px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .card-title {
+            margin: 0;
+            font-size: 22px;
+            letter-spacing: -0.025em;
+        }
+
+        /* Private notes */
+
+        .notes {
+            padding: 8px 27px 20px;
+        }
+
+        .note {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 20px 0;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .note:last-child {
+            border-bottom: 0;
+        }
+
+        .note-number {
+            display: grid;
+            place-items: center;
+            width: 34px;
+            height: 34px;
+            flex: 0 0 34px;
+            border-radius: 10px;
+            background: var(--soft);
+            color: #555;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .note-text {
+            margin: 3px 0 0;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        /* Passkeys */
+
+        .passkey-card {
+            grid-column: 1 / -1;
+        }
+
+        .passkey-list {
+            padding: 8px 27px 27px;
+        }
+
+        .passkey {
+            position: relative;
+            padding: 20px;
+            margin-top: 12px;
+            border: 1px solid var(--line);
+            border-radius: 17px;
+            background: #fafaf8;
+        }
+
+        .passkey-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 15px;
+        }
+
+        .passkey-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0;
+            font-size: 15px;
+            font-weight: 750;
+        }
+
+        .passkey-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #111;
+        }
+
+        .passkey-date {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .passkey-detail {
+            display: grid;
+            gap: 8px;
+            margin: 0;
+        }
+
+        .detail-row {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 15px;
+            font-size: 12px;
+        }
+
+        .detail-label {
+            color: var(--muted);
+        }
+
+        .detail-value {
+            overflow: hidden;
+            color: #444;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .passkey-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 18px;
+        }
+
+        /* Footer controls */
+
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            margin-top: 18px;
+        }
+
+        .security-note {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .logout-button {
+            padding: 12px 18px;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            background: white;
+            color: #333;
+            cursor: pointer;
+            transition:
+                background 0.2s ease,
+                border-color 0.2s ease,
+                transform 0.2s ease;
+        }
+
+        .logout-button:hover {
+            border-color: #bbb;
+            background: #f5f5f2;
+            transform: translateY(-1px);
+        }
+
+        .status {
+            min-height: 20px;
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .empty {
+            padding: 22px 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        @media (max-width: 760px) {
+            .page {
+                width: min(100% - 28px, 1080px);
+                padding-top: 24px;
+            }
+
+            .topbar {
+                margin-bottom: 52px;
+            }
+
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .passkey-card {
+                grid-column: auto;
+            }
+
+            .auth-card {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .footer-actions {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .detail-row {
+                grid-template-columns: 95px 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="page">
+
+    <header class="topbar">
+        <div class="brand">MING</div>
+
+        <a class="back-link" href="/">
+            ← Public Profile
+        </a>
+    </header>
+
+
+    <section class="hero">
+        <div class="eyebrow">Private Area</div>
+
+        <h1>Private<br>Space.</h1>
+
+        <p class="hero-description">
+            패스키 인증을 완료한 사용자만 접근할 수 있는
+            개인 공간입니다.
+            이곳의 내용은 공개 프로필과 분리되어 있습니다.
+        </p>
+    </section>
+
+
+    <section class="auth-card">
+
+        <div class="auth-left">
+            <div class="auth-icon">⌁</div>
+
+            <div>
+                <p class="auth-label">AUTHENTICATED ACCOUNT</p>
+                <p class="auth-user">{{ username }}</p>
+            </div>
+        </div>
+
+        <div class="auth-status">
+            Passkey verified
+        </div>
+
+    </section>
+
+
+    <main class="content-grid">
+
+        <section class="card">
+
+            <div class="card-header">
+                <p class="card-label">Private Notes</p>
+                <h2 class="card-title">{{ data.title }}</h2>
+            </div>
+
+            <div class="notes">
+
+                {% for item in data["items"] %}
+
+                <article class="note">
+                    <div class="note-number">
+                        {{ "%02d"|format(loop.index) }}
+                    </div>
+
+                    <p class="note-text">
+                        {{ item }}
+                    </p>
+                </article>
+
+                {% endfor %}
+
+            </div>
+
+        </section>
+
+
+        <section class="card">
+
+            <div class="card-header">
+                <p class="card-label">Access</p>
+                <h2 class="card-title">Passwordless</h2>
+            </div>
+
+            <div style="padding: 25px 27px;">
+                <p style="margin:0; color:#666; font-size:14px; line-height:1.8;">
+                    이 공간은 비밀번호를 사용하지 않습니다.
+                    등록된 패스키의 공개키를 이용해
+                    로그인 서명을 검증합니다.
+                </p>
+            </div>
+
+        </section>
+
+
+        <section class="card passkey-card">
+
+            <div class="card-header">
+                <p class="card-label">Credentials</p>
+                <h2 class="card-title">등록된 패스키</h2>
+            </div>
+
+            <div class="passkey-list" id="passkeys">
+                <div class="empty">
+                    패스키 정보를 불러오는 중...
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <div class="footer-actions">
+
+        <div class="security-note">
+            Private Space · WebAuthn / Passkey<br>
+            Credential ID와 공개키는 화면에서 일부만 표시됩니다.
+        </div>
+
+        <button
+            class="logout-button"
+            type="button"
+            onclick="logout()"
+        >
+            로그아웃
+        </button>
+
+    </div>
+
+    <div id="status" class="status"></div>
+
+</div>
+
+
+<script>
+    async function loadPasskeys() {
+        const response = await fetch("/api/passkeys");
+        const data = await response.json();
+
+        const container = document.getElementById("passkeys");
+
+        if (!response.ok) {
+            container.innerHTML = `
+                <div class="empty">
+                    ${data.error || "패스키 정보를 불러오지 못했습니다."}
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = "";
+
+        if (!data.passkeys || data.passkeys.length === 0) {
+            container.innerHTML = `
+                <div class="empty">
+                    등록된 패스키가 없습니다.
+                </div>
+            `;
+            return;
+        }
+
+        data.passkeys.forEach((key) => {
+            const div = document.createElement("article");
+
+            div.className = "passkey";
+
+            div.innerHTML = `
+                <div class="passkey-top">
+                    <p class="passkey-name">
+                        <span class="passkey-dot"></span>
+                        ${key.name}
+                    </p>
+
+                    <span class="passkey-date">
+                        ${formatDate(key.registered_at)}
+                    </span>
+                </div>
+
+                <div class="passkey-detail">
+
+                    <div class="detail-row">
+                        <span class="detail-label">Credential ID</span>
+                        <span class="detail-value">
+                            ${key.credential_id}
+                        </span>
+                    </div>
+
+                    <div class="detail-row">
+                        <span class="detail-label">Public Key</span>
+                        <span class="detail-value">
+                            ${key.public_key}
+                        </span>
+                    </div>
+
+                </div>
+            `;
+
+            container.appendChild(div);
+        });
+    }
+
+
+    function formatDate(value) {
+        if (!value) {
+            return "";
+        }
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return new Intl.DateTimeFormat("ko-KR", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }).format(date);
+    }
+
+
+    async function logout() {
+        const response = await fetch("/api/logout", {
+            method: "POST"
+        });
+
+        if (response.ok) {
+            location.href = "/";
+            return;
+        }
+
+        document.getElementById("status").textContent =
+            "로그아웃에 실패했습니다.";
+    }
+
+
+    loadPasskeys();
+</script>
+
+</body>
+</html>
+

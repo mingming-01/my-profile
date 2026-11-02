@@ -169,109 +169,49 @@ QR/바코드를 활용한 실시간 재고 관리 시스템 팀 프로젝트입�
 
 ## 🔐 Task 8 · Passkey Private Space
 
-공개된 소개 페이지와 별도로,
-Passkey를 이용해 인증된 사용자만 접근할 수 있는 Private Space를 구현했습니다.
+공개 프로필과 별도로 WebAuthn / Passkey 인증을 실습한 Private Space가 있습니다. 이 기능은 두 개의 가상 계정(Account A/B)을 사용하는 학습·시연용 기능이며, 실제 민감정보를 보관하는 서비스가 아닙니다.
 
-### 무엇을 사용했나요?
+### 인증 흐름
 
-* Flask
-* WebAuthn / Passkey
-* HTTPS
-* 서버 세션 기반 인증
-* 공개키 기반 인증 검증
+1. 최초 등록에는 계정별 1회용 초대 코드가 필요합니다.
+2. 브라우저가 기기의 Passkey로 WebAuthn 등록 응답을 생성합니다.
+3. Flask 서버는 challenge, RP ID, Origin, 사용자 검증 결과를 확인합니다.
+4. 서버는 Credential ID와 공개키 등 검증에 필요한 정보를 SQLite에 저장합니다.
+5. 로그인 시 서버가 새 challenge를 만들고, 저장된 공개키를 이용해 서명을 검증합니다.
+6. 인증 성공 후 서버 세션에 로그인 계정을 기록하고 해당 계정의 Private Space를 제공합니다.
+7. Passkey를 추가하거나 삭제할 때는 기존 Passkey로 기기 인증을 다시 확인합니다.
 
-### 왜 Passkey를 사용했나요?
+### 적용한 보안 통제
 
-비밀번호를 직접 입력하거나 서버에 저장하는 방식 대신,
-사용자의 기기에 저장된 인증 수단을 이용해 본인임을 확인하도록 구현했습니다.
+- 최초 Passkey 등록에 계정별 1회용 초대 코드 요구
+- 초대 코드 재사용 방지
+- 사용자 검증(User Verification) 요구
+- challenge 서버 만료 시간 검사 및 검증 요청 1회 소비
+- 로그인 성공 시 기존 세션 초기화
+- HttpOnly / SameSite 쿠키와 운영 환경 Secure 쿠키
+- 상태 변경 API의 Origin 확인
+- 로그인 및 등록 시도 제한
+- Passkey 관리 화면에서 사용자 입력을 HTML로 해석하지 않고 텍스트로 출력
+- CSP nonce와 주요 보안 응답 헤더 적용
+- Passkey 추가·삭제 시 최근 인증 확인, 마지막 Passkey 삭제 방지
+- SQLite 트랜잭션을 이용한 계정·Passkey 저장
 
-서버에는 비밀번호나 개인키를 저장하지 않고,
-Passkey 등록 과정에서 생성된 공개키를 저장하여 로그인 시 서명을 검증합니다.
+### 데이터와 운영 환경
 
-### 어떻게 구현했나요?
+Passkey 개인키는 기기에서 관리하며 서버에는 공개키와 Credential ID, Sign Count 등의 정보만 저장합니다. 계정 A/B에 표시되는 Private 데이터는 기능 시연을 위한 샘플입니다.
 
-1. 서버가 매번 새로운 WebAuthn challenge를 생성합니다.
-2. 브라우저가 기기의 Passkey를 이용해 인증합니다.
-3. 서버는 저장된 공개키를 이용해 인증 응답의 서명을 검증합니다.
-4. 검증에 성공하면 서버 세션에 인증된 계정을 저장합니다.
-5. Private Space에서는 현재 인증된 계정의 데이터만 반환합니다.
-6. 로그아웃하면 인증 세션을 제거하여 Private Space 접근을 차단합니다.
+운영 환경에서는 `FLASK_SECRET_KEY`, `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`, `PASSKEY_INVITE_TOKENS`, `DATABASE_PATH`를 별도로 설정해야 합니다. Render에서 SQLite 데이터를 배포 후에도 유지하려면 영속 디스크를 연결하고 DB 파일을 해당 마운트 경로에 저장해야 합니다.
 
-### 접근통제 확인
+로컬 환경변수 구성은 `.env.example`을 참고하세요. 실제 비밀값이 포함된 `.env` 파일은 저장소에 올리지 않습니다.
 
-두 개의 테스트 계정(Account A / Account B)을 사용해
-각 계정에 서로 다른 Passkey와 Private Space 데이터를 구성했습니다.
+### 테스트
 
-Account A에는 다음과 같은 비공개 데이터를 구성했습니다.
-
-* ALEPH 프로젝트 회고 메모
-* 지원 직무 후보 정리
-* 다음 프로젝트에서 개선할 점
-
-Account B에는 다음과 같은 별도의 비공개 데이터를 구성했습니다.
-
-* 가상의 프로젝트 메모 B
-* 가상의 지원 목표 B
-* 가상의 자기평가 B
-
-각 계정으로 로그인했을 때 자신의 Private Space에만 해당 계정의 데이터가 표시되는 것을 확인했습니다.
-
-다른 계정의 ID를 URL에 직접 전달하는 방식도 테스트했습니다.
-
-예를 들어 Account B가 다음과 같이 Account A를 요청해도:
-
-```text
-/api/private?username=account-a
+```bash
+python -m unittest discover -s tests -v
 ```
 
-응답에는 Account A의 데이터가 아닌
-현재 로그인한 Account B의 데이터만 반환되었습니다.
+Passkey 등록 권한, 초대 코드 재사용, challenge 만료, Origin 검증, 비로그인 접근, 마지막 Passkey 삭제, 보안 헤더, 로그인 요청 제한 및 XSS 렌더링 회귀 테스트를 포함합니다. GitHub Actions에서도 테스트를 실행합니다.
 
-반대로 Account A에서 다음 요청을 보내도:
+상세 점검 내역과 남은 운영 검증 항목은 [SECURITY_REVIEW.md](SECURITY_REVIEW.md)에 정리했습니다.
 
-```text
-/api/private?username=account-b
-```
-
-Account B의 데이터가 아닌
-현재 로그인한 Account A의 데이터만 반환되는 것을 확인했습니다.
-
-즉, URL에 전달된 계정 ID를 그대로 신뢰하지 않고
-현재 인증된 세션의 계정을 기준으로 Private 데이터를 반환하도록 구현했습니다.
-
-### Passkey 관리
-
-등록된 Passkey에는 사용자가 구분할 수 있도록
-Passkey 이름과 등록일을 표시합니다.
-
-서버에는 인증에 필요한 공개키를 저장하며,
-개인키 자체는 서버로 전송하거나 저장하지 않습니다.
-
-등록된 Passkey는 삭제할 수 있으며,
-삭제된 Passkey는 이후 인증에 사용할 수 없도록 처리했습니다.
-
-### 확인한 보안 동작
-
-* 비로그인 상태의 Private Space 접근 차단
-* 다른 계정의 Private 데이터 접근 차단
-* 다른 계정 ID를 URL에 전달해도 현재 계정 데이터만 반환
-* 매 로그인마다 새로운 challenge 생성
-* challenge 재사용 거부
-* 저장된 공개키를 이용한 서명 검증
-* 로그아웃 후 Private Space 접근 차단
-* 삭제된 Passkey의 인증 거부
-* 계정별 Private 데이터 분리
-
-### AI 활용과 나의 판단
-
-AI를 활용해 WebAuthn API 구조, Flask 구현 방식,
-오류 원인 분석과 UI 개선 방향을 검토했습니다.
-
-실제 구현 과정에서는 브라우저의 인증 동작과 서버 응답을 직접 확인하고,
-발생한 오류를 테스트 결과를 바탕으로 수정했습니다.
-
-특히 WebAuthn 등록 응답과 로그인 응답의 구조가 서로 다르다는 점을
-실제 오류 메시지와 네트워크 응답을 확인하여 수정했습니다.
-
-또한 Account A와 Account B에서 직접 인증하고 API 요청을 보내며
-계정별 Private 데이터가 분리되는지 직접 검증했습니다.
+> 이 프로젝트는 WebAuthn과 세션 기반 접근 제어를 학습하고 시연하기 위한 구현입니다. 코드 점검과 자동화 테스트가 실제 브라우저·기기별 검증, 운영 환경 검토 또는 외부 보안 감사를 대신하지는 않습니다.

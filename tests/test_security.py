@@ -198,6 +198,101 @@ class PasskeySecurityTests(unittest.TestCase):
             invalid_account.get_json()["error"],
         )
 
+    def _seed_account_with_passkey(self):
+        connection = self.db_connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO users (username, display_name, user_handle, invite_used_at, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                ("account-a", "Account A", "dXNlci1oYW5kbGU", "2026-11-02T00:00:00+00:00", "2026-11-02T00:00:00+00:00"),
+            )
+            connection.execute(
+                """
+                INSERT INTO passkeys (credential_id, username, public_key, sign_count, name, registered_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                ("Y3JlZC1pZA", "account-a", "cHVibGljLWtleQ", 0, "Laptop", "2026-11-02T00:00:00+00:00"),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def test_existing_account_cannot_add_passkey_without_recent_authentication(self):
+        self._seed_account_with_passkey()
+        response = self.post(
+            "/api/passkey/register/options",
+            {
+                "username": "account-a",
+                "display_name": "Account A",
+                "passkey_name": "Another device",
+                "invite_token": "A" * 40,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+
+        with self.client.session_transaction() as browser_session:
+            browser_session["authenticated_user"] = "account-a"
+            browser_session["authenticated_at"] = time.time() - 600
+
+        stale = self.post(
+            "/api/passkey/register/options",
+            {
+                "username": "account-a",
+                "display_name": "Account A",
+                "passkey_name": "Another device",
+            },
+        )
+        self.assertEqual(stale.status_code, 403)
+
+        with self.client.session_transaction() as browser_session:
+            browser_session["authenticated_at"] = time.time()
+
+        allowed = self.post(
+            "/api/passkey/register/options",
+            {
+                "username": "account-a",
+                "display_name": "Account A",
+                "passkey_name": "Another device",
+            },
+        )
+        self.assertEqual(allowed.status_code, 200)
+
+    @patch("app.verify_authentication_response")
+    def test_login_verification_updates_counter_and_creates_session(self, verify_mock):
+        self._seed_account_with_passkey()
+        verify_mock.return_value = SimpleNamespace(new_sign_count=1)
+
+        options = self.post(
+            "/api/passkey/login/options",
+            {"username": "account-a"},
+        )
+        self.assertEqual(options.status_code, 200)
+
+        result = self.post(
+            "/api/passkey/login/verify",
+            {"id": "Y3JlZC1pZA", "rawId": "Y3JlZC1pZA"},
+        )
+        self.assertEqual(result.status_code, 200)
+        self.assertTrue(result.get_json()["ok"])
+        self.assertEqual(self.client.get("/api/private").status_code, 200)
+
+        connection = self.db_connect()
+        try:
+            counter = connection.execute(
+                "SELECT sign_count FROM passkeys WHERE username = 'account-a'"
+            ).fetchone()["sign_count"]
+            self.assertEqual(counter, 1)
+        finally:
+            connection.close()
+
+        replay = self.post(
+            "/api/passkey/login/verify",
+            {"id": "Y3JlZC1pZA", "rawId": "Y3JlZC1pZA"},
+        )
+        self.assertEqual(replay.status_code, 400)
+
     def test_last_passkey_cannot_be_deleted(self):
         connection = self.db_connect()
         try:

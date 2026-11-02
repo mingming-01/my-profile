@@ -63,9 +63,11 @@
 기존 구현은 WebAuthn 옵션에 60초 timeout을 전달했지만 서버가 자체적으로 요청 발급 시각을 검사하지는 않았다.
 
 **개선 사항**
-- 등록·인증 challenge에 서버 발급 시각을 함께 저장한다.
+- challenge 값과 발급 시각, 계정, ceremony 유형을 SQLite `webauthn_challenges` 테이블에 저장한다.
+- 브라우저 세션에는 challenge 자체가 아니라 challenge hash만 보관한다.
+- 검증 시 SQLite 트랜잭션으로 challenge를 원자적으로 소비한다.
 - 180초가 지난 challenge는 거부한다.
-- 검증 요청이 도착하면 challenge 상태를 먼저 소비해 재사용을 방지한다.
+- 이전에 서명된 세션 쿠키를 다시 제출해도 이미 소비된 challenge는 재사용할 수 없다.
 - 인증·등록 실패 시 내부 예외 상세를 브라우저에 반환하지 않는다.
 
 ### SEC-05. JSON 파일 저장 방식
@@ -165,7 +167,8 @@ python -m unittest discover -s tests -v
 - 최초 등록 초대 코드 요구
 - 올바른 코드로 등록 옵션을 생성하되 검증 전 DB 계정은 생성하지 않는지 확인
 - 초대 코드 재사용 거부
-- 만료 challenge 거부 및 소비
+- 만료 challenge 거부
+- 이미 소비한 challenge의 이전 세션 쿠키 재전송 거부
 - 계정 존재 여부를 구별하는 로그인 응답 방지
 - 마지막 Passkey 삭제 방지
 - 보안 헤더 및 no-store 적용

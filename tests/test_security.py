@@ -163,7 +163,7 @@ class PasskeySecurityTests(unittest.TestCase):
                 "invite_token": "A" * 40,
             },
         )
-        self.assertEqual(replay.status_code, 409)
+        self.assertEqual(replay.status_code, 403)
 
         connection = self.db_connect()
         try:

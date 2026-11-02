@@ -129,8 +129,16 @@ def _validate_runtime_config(config):
         config["WEBAUTHN_ORIGIN"] = "http://localhost:5000"
 
     parsed = urlparse(config["WEBAUTHN_ORIGIN"])
-    if parsed.scheme not in ("https", "http") or not parsed.hostname:
-        raise RuntimeError("WEBAUTHN_ORIGIN은 유효한 origin URL이어야 합니다.")
+    if (
+        parsed.scheme not in ("https", "http")
+        or not parsed.hostname
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise RuntimeError("WEBAUTHN_ORIGIN은 경로가 없는 유효한 origin URL이어야 합니다.")
 
     hostname = parsed.hostname.lower()
     rp_id = config["WEBAUTHN_RP_ID"].lower()

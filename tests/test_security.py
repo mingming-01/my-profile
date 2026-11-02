@@ -88,11 +88,14 @@ class PasskeySecurityTests(unittest.TestCase):
         self.assertEqual(missing.status_code, 403)
         self.assertEqual(invalid.status_code, 403)
 
-        with self.app.app_context():
-            row = self.db_connect().execute(
+        connection = self.db_connect()
+        try:
+            row = connection.execute(
                 "SELECT username FROM users WHERE username = 'account-a'"
             ).fetchone()
             self.assertIsNone(row)
+        finally:
+            connection.close()
 
     def test_valid_invitation_creates_options_but_not_user_before_verification(self):
         response = self.post(

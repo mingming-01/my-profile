@@ -202,7 +202,18 @@ Passkey 개인키는 기기에서 관리하며 서버에는 공개키와 Credent
 
 운영 환경에서는 `FLASK_SECRET_KEY`, `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`, `PASSKEY_INVITE_TOKENS`, `DATABASE_PATH`를 별도로 설정해야 합니다. Render에서 SQLite 데이터를 배포 후에도 유지하려면 영속 디스크를 연결하고 DB 파일을 해당 마운트 경로에 저장해야 합니다.
 
-로컬 환경변수 구성은 `.env.example`을 참고하세요. 실제 비밀값이 포함된 `.env` 파일은 저장소에 올리지 않습니다.
+로컬 실행은 다음과 같이 준비합니다.
+
+```bash
+cp .env.example .env
+# .env 안의 Secret Key와 계정별 초대 코드를 새 난수 값으로 교체
+set -a
+source .env
+set +a
+python app.py
+```
+
+실제 비밀값이 포함된 `.env` 파일은 저장소에 올리지 않습니다. 운영 배포 전에는 `APP_ENV=production`과 실제 HTTPS 도메인에 맞는 RP ID / Origin, 충분히 긴 Secret Key, 계정별 초대 코드를 Render 환경변수에 설정해야 합니다.
 
 ### 테스트
 

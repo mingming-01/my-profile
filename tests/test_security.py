@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app import create_app
+from app import _validate_runtime_config, create_app
 
 
 ORIGIN = "http://localhost:5000"
@@ -362,7 +362,7 @@ class PasskeySecurityTests(unittest.TestCase):
         ]
         self.assertEqual(responses[-1].status_code, 429)
 
-    def test_production_requires_secret_tokens_origin_and_persistent_database(self):
+    def test_production_requires_secret_tokens_origin_and_postgres_database(self):
         production_config = {
             "APP_ENV": "production",
             "SECRET_KEY": "S" * 64,
@@ -377,21 +377,29 @@ class PasskeySecurityTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             create_app({**production_config, "SECRET_KEY": ""})
 
+        # A local SQLite path must not satisfy production database requirements.
         with self.assertRaises(RuntimeError):
-            create_app({**production_config, "DATABASE_PATH": ""})
+            create_app({**production_config, "DATABASE_PATH": self.database_path})
 
         with self.assertRaises(RuntimeError):
             create_app({
                 **production_config,
-                "DATABASE_PATH": self.database_path,
+                "DATABASE_URL": "sqlite:///not-postgres",
+            })
+
+        with self.assertRaises(RuntimeError):
+            _validate_runtime_config({
+                **production_config,
+                "DATABASE_URL": "postgresql://user:password@db.example.invalid:5432/postgres",
                 "PASSKEY_INVITE_TOKENS": {"account-a": "A" * 40},
             })
 
-        valid_app = create_app({
+        valid_config = {
             **production_config,
-            "DATABASE_PATH": self.database_path,
-        })
-        self.assertIsNotNone(valid_app)
+            "DATABASE_URL": "postgresql://user:password@db.example.invalid:5432/postgres",
+        }
+        _validate_runtime_config(valid_config)
+        self.assertEqual(valid_config["DATABASE_URL"].split("@", 1)[1], "db.example.invalid:5432/postgres")
 
     def test_private_template_does_not_insert_dynamic_values_with_inner_html(self):
         template_path = Path(__file__).resolve().parents[1] / "templates" / "private.html"

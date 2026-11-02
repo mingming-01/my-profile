@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Private Space · Ming</title>
 
-    <style>
+    <style nonce="{{ csp_nonce }}">
         :root {
             --bg: #f7f7f5;
             --surface: rgba(255, 255, 255, 0.88);
@@ -402,6 +402,75 @@
                 grid-template-columns: 95px 1fr;
             }
         }
+    
+        .passwordless-copy {
+            padding: 25px 27px;
+        }
+
+        .passwordless-description {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+
+        .passkey-management {
+            padding: 22px 27px 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .passkey-management p {
+            margin: 0 0 14px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.7;
+        }
+
+        .passkey-controls {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .passkey-name-input {
+            min-width: 220px;
+            flex: 1 1 220px;
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            font: inherit;
+        }
+
+        .action-button,
+        .delete-passkey {
+            padding: 11px 14px;
+            border: 1px solid #deded8;
+            border-radius: 10px;
+            background: #fff;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .action-button:hover,
+        .delete-passkey:hover {
+            background: var(--soft);
+        }
+
+        .delete-passkey {
+            margin-top: 14px;
+            color: var(--danger);
+        }
+
+        .empty {
+            padding: 22px 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
     </style>
 </head>
 
@@ -486,8 +555,8 @@
                 <h2 class="card-title">Passwordless</h2>
             </div>
 
-            <div style="padding: 25px 27px;">
-                <p style="margin:0; color:#666; font-size:14px; line-height:1.8;">
+            <div class="passwordless-copy">
+                <p class="passwordless-description">
                     이 공간은 비밀번호를 사용하지 않습니다.
                     등록된 패스키의 공개키를 이용해
                     로그인 서명을 검증합니다.
@@ -502,6 +571,21 @@
             <div class="card-header">
                 <p class="card-label">Credentials</p>
                 <h2 class="card-title">등록된 패스키</h2>
+            </div>
+
+            <div class="passkey-management">
+                <p>새 기기를 등록하거나 기존 Passkey를 삭제할 때는 현재 등록된 Passkey로 다시 인증해야 합니다. 마지막 Passkey는 계정 잠금을 방지하기 위해 삭제할 수 없습니다.</p>
+                <div class="passkey-controls">
+                    <input
+                        id="new-passkey-name"
+                        class="passkey-name-input"
+                        maxlength="40"
+                        placeholder="새 기기 이름 (예: 개인 노트북)"
+                        autocomplete="off"
+                    >
+                    <button id="add-passkey" class="action-button" type="button">새 Passkey 등록</button>
+                    <button id="reauthenticate" class="action-button" type="button">기기 인증 다시 확인</button>
+                </div>
             </div>
 
             <div class="passkey-list" id="passkeys">
@@ -537,85 +621,143 @@
 </div>
 
 
-<script>
-    async function loadPasskeys() {
-        const response = await fetch("/api/passkeys");
-        const data = await response.json();
+<script nonce="{{ csp_nonce }}">
+    const currentUsername = {{ username|tojson }};
+    const statusBox = document.getElementById("status");
+    const passkeyContainer = document.getElementById("passkeys");
 
-        const container = document.getElementById("passkeys");
-
-        if (!response.ok) {
-            container.innerHTML = `
-                <div class="empty">
-                    ${data.error || "패스키 정보를 불러오지 못했습니다."}
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = "";
-
-        if (!data.passkeys || data.passkeys.length === 0) {
-            container.innerHTML = `
-                <div class="empty">
-                    등록된 패스키가 없습니다.
-                </div>
-            `;
-            return;
-        }
-
-        data.passkeys.forEach((key) => {
-            const div = document.createElement("article");
-
-            div.className = "passkey";
-
-            div.innerHTML = `
-                <div class="passkey-top">
-                    <p class="passkey-name">
-                        <span class="passkey-dot"></span>
-                        ${key.name}
-                    </p>
-
-                    <span class="passkey-date">
-                        ${formatDate(key.registered_at)}
-                    </span>
-                </div>
-
-                <div class="passkey-detail">
-
-                    <div class="detail-row">
-                        <span class="detail-label">Credential ID</span>
-                        <span class="detail-value">
-                            ${key.credential_id}
-                        </span>
-                    </div>
-
-                    <div class="detail-row">
-                        <span class="detail-label">Public Key</span>
-                        <span class="detail-value">
-                            ${key.public_key}
-                        </span>
-                    </div>
-
-                </div>
-            `;
-
-            container.appendChild(div);
-        });
+    function showStatus(message) {
+        statusBox.textContent = message;
     }
 
+    function bufferToBase64url(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        bytes.forEach(byte => {
+            binary += String.fromCharCode(byte);
+        });
+        return btoa(binary)
+            .replace(/\\+/g, "-")
+            .replace(/\\//g, "_")
+            .replace(/=/g, "");
+    }
+
+    function base64urlToBuffer(value) {
+        const padding = "=".repeat((4 - value.length % 4) % 4);
+        const base64 = value
+            .replace(/-/g, "+")
+            .replace(/_/g, "/") + padding;
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    function prepareCreationOptions(options) {
+        options.challenge = base64urlToBuffer(options.challenge);
+        options.user.id = base64urlToBuffer(options.user.id);
+        if (options.excludeCredentials) {
+            options.excludeCredentials = options.excludeCredentials.map(item => ({
+                ...item,
+                id: base64urlToBuffer(item.id)
+            }));
+        }
+        return options;
+    }
+
+    function prepareRequestOptions(options) {
+        options.challenge = base64urlToBuffer(options.challenge);
+        if (options.allowCredentials) {
+            options.allowCredentials = options.allowCredentials.map(item => ({
+                ...item,
+                id: base64urlToBuffer(item.id)
+            }));
+        }
+        return options;
+    }
+
+    function serializeCredential(credential) {
+        const response = credential.response;
+        const serializedResponse = {
+            clientDataJSON: bufferToBase64url(response.clientDataJSON)
+        };
+
+        if ("attestationObject" in response) {
+            serializedResponse.attestationObject = bufferToBase64url(response.attestationObject);
+        }
+        if ("authenticatorData" in response) {
+            serializedResponse.authenticatorData = bufferToBase64url(response.authenticatorData);
+        }
+        if ("signature" in response) {
+            serializedResponse.signature = bufferToBase64url(response.signature);
+        }
+        if ("userHandle" in response && response.userHandle) {
+            serializedResponse.userHandle = bufferToBase64url(response.userHandle);
+        }
+
+        return {
+            id: credential.id,
+            rawId: bufferToBase64url(credential.rawId),
+            response: serializedResponse,
+            type: credential.type,
+            clientExtensionResults: credential.getClientExtensionResults(),
+            authenticatorAttachment: credential.authenticatorAttachment
+        };
+    }
+
+    async function readJsonResponse(response) {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload.error || "요청을 처리하지 못했습니다.");
+        }
+        return payload;
+    }
+
+    async function postJson(url, body) {
+        const response = await fetch(url, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+        return readJsonResponse(response);
+    }
+
+    async function reauthenticate() {
+        showStatus("기존 Passkey로 기기 인증을 확인하고 있습니다.");
+        const options = await postJson("/api/passkey/login/options", {
+            username: currentUsername
+        });
+        const credential = await navigator.credentials.get({
+            publicKey: prepareRequestOptions(options)
+        });
+        if (!credential) {
+            throw new Error("기기 인증이 취소되었습니다.");
+        }
+        await postJson("/api/passkey/login/verify", serializeCredential(credential));
+    }
+
+    function createTextElement(tagName, className, value) {
+        const element = document.createElement(tagName);
+        if (className) element.className = className;
+        element.textContent = value == null ? "" : String(value);
+        return element;
+    }
+
+    function appendDetailRow(parent, label, value) {
+        const row = document.createElement("div");
+        row.className = "detail-row";
+        row.appendChild(createTextElement("span", "detail-label", label));
+        row.appendChild(createTextElement("span", "detail-value", value));
+        parent.appendChild(row);
+    }
 
     function formatDate(value) {
-        if (!value) {
-            return "";
-        }
-
+        if (!value) return "";
         const date = new Date(value);
-
-        if (Number.isNaN(date.getTime())) {
-            return value;
-        }
-
+        if (Number.isNaN(date.getTime())) return "";
         return new Intl.DateTimeFormat("ko-KR", {
             year: "numeric",
             month: "2-digit",
@@ -623,21 +765,135 @@
         }).format(date);
     }
 
+    async function loadPasskeys() {
+        passkeyContainer.replaceChildren();
+        try {
+            const response = await fetch("/api/passkeys", {
+                credentials: "same-origin",
+                cache: "no-store"
+            });
+            const data = await readJsonResponse(response);
 
-    async function logout() {
-        const response = await fetch("/api/logout", {
-            method: "POST"
-        });
+            if (!data.passkeys || data.passkeys.length === 0) {
+                passkeyContainer.appendChild(
+                    createTextElement("div", "empty", "등록된 Passkey가 없습니다.")
+                );
+                return;
+            }
 
-        if (response.ok) {
-            location.href = "/";
+            data.passkeys.forEach((key) => {
+                const article = document.createElement("article");
+                article.className = "passkey";
+
+                const top = document.createElement("div");
+                top.className = "passkey-top";
+
+                const name = document.createElement("p");
+                name.className = "passkey-name";
+                const dot = document.createElement("span");
+                dot.className = "passkey-dot";
+                name.appendChild(dot);
+                name.appendChild(document.createTextNode(String(key.name || "이름 없는 Passkey")));
+                top.appendChild(name);
+                top.appendChild(createTextElement("span", "passkey-date", formatDate(key.registered_at)));
+                article.appendChild(top);
+
+                const details = document.createElement("div");
+                details.className = "passkey-detail";
+                appendDetailRow(details, "Credential ID", key.credential_id_preview);
+                appendDetailRow(details, "Public Key", key.public_key_preview);
+                article.appendChild(details);
+
+                if (data.passkeys.length > 1) {
+                    const deleteButton = createTextElement("button", "delete-passkey", "이 Passkey 삭제");
+                    deleteButton.type = "button";
+                    deleteButton.addEventListener("click", () => deletePasskey(key.id));
+                    article.appendChild(deleteButton);
+                }
+
+                passkeyContainer.appendChild(article);
+            });
+        } catch (error) {
+            passkeyContainer.appendChild(
+                createTextElement("div", "empty", error.message)
+            );
+        }
+    }
+
+    async function addPasskey() {
+        const nameInput = document.getElementById("new-passkey-name");
+        const passkeyName = nameInput.value.trim();
+
+        if (!passkeyName || passkeyName.length > 40) {
+            showStatus("Passkey 이름을 1~40자로 입력하세요.");
             return;
         }
 
-        document.getElementById("status").textContent =
-            "로그아웃에 실패했습니다.";
+        try {
+            await reauthenticate();
+            showStatus("새 Passkey 등록 정보를 준비하고 있습니다.");
+            const options = await postJson("/api/passkey/register/options", {
+                username: currentUsername,
+                display_name: currentUsername,
+                passkey_name: passkeyName
+            });
+
+            const credential = await navigator.credentials.create({
+                publicKey: prepareCreationOptions(options)
+            });
+            if (!credential) {
+                throw new Error("Passkey 등록이 취소되었습니다.");
+            }
+
+            await postJson("/api/passkey/register/verify", serializeCredential(credential));
+            nameInput.value = "";
+            showStatus("새 Passkey 등록이 완료되었습니다.");
+            await loadPasskeys();
+        } catch (error) {
+            showStatus("Passkey 등록 실패: " + error.message);
+        }
     }
 
+    async function deletePasskey(passkeyId) {
+        if (!window.confirm("이 기기에 등록된 Passkey를 삭제할까요?")) return;
+
+        try {
+            await reauthenticate();
+            const response = await fetch("/api/passkeys/" + encodeURIComponent(passkeyId), {
+                method: "DELETE",
+                credentials: "same-origin"
+            });
+            await readJsonResponse(response);
+            showStatus("Passkey를 삭제했습니다.");
+            await loadPasskeys();
+        } catch (error) {
+            showStatus("Passkey 삭제 실패: " + error.message);
+        }
+    }
+
+    async function logout() {
+        try {
+            const response = await fetch("/api/logout", {
+                method: "POST",
+                credentials: "same-origin"
+            });
+            await readJsonResponse(response);
+            location.href = "/";
+        } catch (error) {
+            showStatus("로그아웃 실패: " + error.message);
+        }
+    }
+
+    document.getElementById("add-passkey").addEventListener("click", addPasskey);
+    document.getElementById("reauthenticate").addEventListener("click", async () => {
+        try {
+            await reauthenticate();
+            showStatus("기기 인증을 다시 확인했습니다.");
+        } catch (error) {
+            showStatus("기기 인증 실패: " + error.message);
+        }
+    });
+    document.getElementById("logout-button").addEventListener("click", logout);
 
     loadPasskeys();
 </script>

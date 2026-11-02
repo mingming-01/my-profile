@@ -16,7 +16,7 @@
 | SEC-02 | 높음 | 운영 환경에서 고정된 개발용 SECRET_KEY로 대체될 수 있음 | 운영 환경 Secret Key 필수화 및 시작 시 검증 |
 | SEC-03 | 높음 | Passkey 이름을 `innerHTML`에 삽입해 저장형 XSS 가능 | DOM 요소 생성과 `textContent` 사용 |
 | SEC-04 | 중간 | challenge 만료 시간이 서버에서 검증되지 않음 | 서버 발급 시각을 저장하고 180초 후 만료 |
-| SEC-05 | 중간 | JSON 파일 직접 쓰기로 동시성·손상·배포 저장소 문제가 있음 | SQLite 트랜잭션 및 영속 저장 경로 사용 |
+| SEC-05 | 중간 | JSON 파일 직접 쓰기로 동시성·손상·배포 저장소 문제가 있음 | 로컬 SQLite와 운영 PostgreSQL 분리, 트랜잭션 저장 |
 | SEC-06 | 중간 | 상태 변경 API에 Origin 확인이 없음 | 설정된 WebAuthn Origin과 요청 Origin 비교 |
 | SEC-07 | 중간 | 로그인·등록 시도 제한과 보안 헤더가 부족함 | 계정/IP 기반 기본 제한, CSP 및 보안 헤더 |
 | SEC-08 | 중간 | 세션 만료·인증 상태 초기화·Passkey 삭제 보호가 부족함 | 세션 초기화, 제한된 세션 수명, 재인증, 마지막 Passkey 삭제 방지 |
@@ -111,7 +111,7 @@
 - HTTPS 운영 환경 HSTS
 
 ### 저장
-SQLite에 저장하는 정보:
+DB에 저장하는 정보 (로컬 SQLite / 운영 PostgreSQL):
 - 계정 식별자와 WebAuthn user handle
 - Credential ID
 - Credential Public Key
@@ -180,7 +180,7 @@ GitHub Actions의 `.github/workflows/tests.yml`에서도 동일한 테스트를 
 
 ## 6. 남은 검증 및 제한 사항
 
-이 점검은 저장소의 코드와 테스트를 대상으로 한 정적·단위 수준의 점검이다. 실제 배포 환경에서의 브라우저·기기 조합별 WebAuthn 등록/인증 테스트, Render 환경변수 확인, 영속 디스크 연결 확인, 백업·복구 테스트와 외부 침투 테스트를 대신하지 않는다.
+이 점검은 저장소의 코드와 테스트를 대상으로 한 정적·단위 수준의 점검이다. 실제 배포 환경에서의 브라우저·기기 조합별 WebAuthn 등록/인증 테스트, Render 환경변수 확인, Supabase PostgreSQL 연결 확인, 백업·복구 테스트와 외부 침투 테스트를 대신하지 않는다.
 
 또한 현재 Private Space의 Account A/B 데이터는 접근통제 시연을 위한 고정 샘플 데이터다. 실제 민감정보를 저장하는 개인 비밀번호 보관함이나 범용 비밀 저장소로 소개해서는 안 된다.
 
@@ -188,7 +188,7 @@ WebAuthn 등록은 attestation `none`을 사용하므로 특정 제조사 또는
 
 **운영 배포 전 확인이 필요한 항목**
 1. Render에 Secret Key, RP ID, Origin, 계정별 초대 코드가 올바르게 설정되어 있는지
-2. 데이터베이스 파일이 영속 디스크에 저장되는지
+2. Render의 `DATABASE_URL`이 Supabase PostgreSQL에 연결되고 DB 백업·복구가 가능한지
 3. 기존 Passkey 등록을 종료하고 초대 코드를 이용해 재등록했는지
 4. Chrome/Edge와 실제 기기에서 새 등록, 로그인, 추가 등록, 삭제, 로그아웃을 확인했는지
 5. XSS 입력 문자열이 코드로 실행되지 않고 텍스트로만 표시되는지

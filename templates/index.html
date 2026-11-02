@@ -6,7 +6,7 @@
 
     <title>About Me</title>
 
-    <style>
+    <style nonce="{{ csp_nonce }}">
         * {
             box-sizing: border-box;
             margin: 0;
@@ -1127,6 +1127,16 @@
                     <option value="account-b">Account B</option>
                 </select>
             </div>
+            <div class="passkey-field">
+                <label for="passkey-invite-token">초기 등록 코드</label>
+                <input
+                    id="passkey-invite-token"
+                    type="password"
+                    placeholder="계정 최초 등록 시 발급된 코드"
+                    autocomplete="off"
+                >
+            </div>
+
 
 
             <div class="passkey-field">
@@ -1229,7 +1239,7 @@
     </div>
 </section>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 function bufferToBase64url(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = "";
@@ -1372,7 +1382,8 @@ document.getElementById("register-passkey")
                     body: JSON.stringify({
                         username,
                         display_name: displayName,
-                        passkey_name: passkeyName
+                        passkey_name: passkeyName,
+                        invite_token: document.getElementById("passkey-invite-token").value.trim()
                     })
                 }
             );
@@ -1410,7 +1421,7 @@ document.getElementById("register-passkey")
             const result = await verifyResponse.json();
 
             if (!verifyResponse.ok) {
-                throw new Error(result.detail || result.error);
+                throw new Error(result.error || "등록 검증에 실패했습니다.");
             }
 
             showStatus(

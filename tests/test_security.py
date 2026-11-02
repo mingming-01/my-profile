@@ -362,18 +362,36 @@ class PasskeySecurityTests(unittest.TestCase):
         ]
         self.assertEqual(responses[-1].status_code, 429)
 
-    def test_production_requires_secret_and_webauthn_origin(self):
+    def test_production_requires_secret_tokens_origin_and_persistent_database(self):
+        production_config = {
+            "APP_ENV": "production",
+            "SECRET_KEY": "S" * 64,
+            "WEBAUTHN_RP_ID": "my-profile-ohhl.onrender.com",
+            "WEBAUTHN_ORIGIN": "https://my-profile-ohhl.onrender.com",
+            "PASSKEY_INVITE_TOKENS": {
+                "account-a": "A" * 40,
+                "account-b": "B" * 40,
+            },
+        }
+
         with self.assertRaises(RuntimeError):
-            create_app(
-                {
-                    "APP_ENV": "production",
-                    "SECRET_KEY": "",
-                    "WEBAUTHN_RP_ID": "my-profile-ohhl.onrender.com",
-                    "WEBAUTHN_ORIGIN": "https://my-profile-ohhl.onrender.com",
-                    "DATABASE_PATH": self.database_path,
-                    "PASSKEY_INVITE_TOKENS": {"account-a": "A" * 40},
-                }
-            )
+            create_app({**production_config, "SECRET_KEY": ""})
+
+        with self.assertRaises(RuntimeError):
+            create_app({**production_config, "DATABASE_PATH": ""})
+
+        with self.assertRaises(RuntimeError):
+            create_app({
+                **production_config,
+                "DATABASE_PATH": self.database_path,
+                "PASSKEY_INVITE_TOKENS": {"account-a": "A" * 40},
+            })
+
+        valid_app = create_app({
+            **production_config,
+            "DATABASE_PATH": self.database_path,
+        })
+        self.assertIsNotNone(valid_app)
 
     def test_private_template_does_not_insert_dynamic_values_with_inner_html(self):
         template_path = Path(__file__).resolve().parents[1] / "templates" / "private.html"

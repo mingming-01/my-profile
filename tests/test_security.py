@@ -48,7 +48,10 @@ class PasskeySecurityTests(unittest.TestCase):
     def test_private_endpoints_require_authentication(self):
         self.assertEqual(self.client.get("/api/private").status_code, 401)
         self.assertEqual(self.client.get("/api/passkeys").status_code, 401)
-        self.assertEqual(self.client.delete("/api/passkeys/1").status_code, 403)
+        self.assertEqual(
+            self.client.delete("/api/passkeys/1", headers={"Origin": ORIGIN}).status_code,
+            401,
+        )
         self.assertEqual(self.client.get("/private").status_code, 302)
 
     def test_mutating_api_rejects_missing_or_wrong_origin(self):
@@ -228,6 +231,7 @@ class PasskeySecurityTests(unittest.TestCase):
         self.assertIn("Content-Security-Policy", response.headers)
         self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
         self.assertEqual(response.headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(response.headers.get("Cache-Control"), "no-store")
 
     def test_rate_limit_is_applied_to_login_options(self):
         responses = [

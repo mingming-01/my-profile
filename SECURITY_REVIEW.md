@@ -63,9 +63,9 @@
 기존 구현은 WebAuthn 옵션에 60초 timeout을 전달했지만 서버가 자체적으로 요청 발급 시각을 검사하지는 않았다.
 
 **개선 사항**
-- challenge 값과 발급 시각, 계정, ceremony 유형을 SQLite `webauthn_challenges` 테이블에 저장한다.
+- challenge 값과 발급 시각, 계정, ceremony 유형을 `webauthn_challenges` 테이블에 저장한다. 로컬은 SQLite, 운영은 PostgreSQL을 사용한다.
 - 브라우저 세션에는 challenge 자체가 아니라 challenge hash만 보관한다.
-- 검증 시 SQLite 트랜잭션으로 challenge를 원자적으로 소비한다.
+- 검증 시 DB 트랜잭션으로 challenge를 원자적으로 소비한다. PostgreSQL에서는 조건부 UPDATE ... RETURNING을 사용한다.
 - 180초가 지난 challenge는 거부한다.
 - 이전에 서명된 세션 쿠키를 다시 제출해도 이미 소비된 challenge는 재사용할 수 없다.
 - 인증·등록 실패 시 내부 예외 상세를 브라우저에 반환하지 않는다.
@@ -75,10 +75,10 @@
 기존 코드는 `auth.json`에 데이터를 직접 덮어쓰는 방식이었다. 동시 요청이 발생하거나 파일이 손상되면 저장 데이터가 유실될 수 있었고, 배포 플랫폼의 로컬 파일시스템이 영속 저장을 보장하는지도 확인되지 않았다.
 
 **개선 사항**
-- SQLite 테이블로 사용자와 Passkey를 분리했다.
+- SQLite(로컬) 또는 PostgreSQL(운영) 테이블로 사용자와 Passkey를 분리했다.
 - 외래키, 트랜잭션, busy timeout, WAL 모드를 사용한다.
-- DB 경로를 `DATABASE_PATH` 환경변수로 설정한다.
-- Render에서는 영속 디스크를 연결한 경우에만 해당 마운트 경로를 DB 경로로 지정한다.
+- 로컬 개발은 `DATABASE_PATH` 환경변수로 SQLite 파일 경로를 지정한다.
+- 운영 환경은 `DATABASE_URL`로 PostgreSQL에 연결한다. Render Free의 임시 파일시스템에 Passkey DB를 두지 않는다.
 
 기존 `data/auth.json`의 자격 증명은 등록 계정 소유권을 검증할 수 없으므로 자동 이관하지 않는다. 보안 개선 후에는 초대 코드로 각 계정의 Passkey를 다시 등록해야 한다. 기존 파일은 백업·검토 전까지 직접 삭제하지 않는다.
 
@@ -131,7 +131,8 @@ Passkey의 개인키는 인증기기에서 관리하며 서버 DB에 저장하�
 | `WEBAUTHN_RP_ID` | 실제 도메인만 입력 | `my-profile-ohhl.onrender.com` |
 | `WEBAUTHN_ORIGIN` | 브라우저에서 접속하는 정확한 HTTPS Origin | `https://my-profile-ohhl.onrender.com` |
 | `PASSKEY_INVITE_TOKENS` | 최초 등록 코드 JSON | 계정별 `secrets.token_urlsafe(32)` 결과 사용 |
-| `DATABASE_PATH` | SQLite 저장 경로 | 영속 디스크 연결 시 `/var/data/passkeys.sqlite3` |
+| `DATABASE_URL` | 운영 PostgreSQL 연결 문자열 | Supabase Connect 메뉴의 Session pooler URI |
+| `DATABASE_PATH` | 로컬 SQLite 파일 경로 | 기본값 `instance/passkeys.sqlite3` (개발용) |
 
 초대 코드 생성 예시:
 
@@ -150,7 +151,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 위 예시의 설명 문구를 실제 생성한 난수 값으로 교체한다. 실제 코드를 GitHub, README, 화면 코드 또는 공개 이슈에 올리지 않는다.
 
-Render에서 `/var/data`를 영속 디스크 마운트 경로로 사용하는 경우에만 `DATABASE_PATH=/var/data/passkeys.sqlite3`를 설정한다. 영속 디스크가 없다면 재배포·재시작 후 Passkey 등록 데이터가 사라질 수 있다.
+운영 환경에서는 Render에 `DATABASE_URL`을 설정하고 Supabase PostgreSQL 연결 문자열을 사용한다. 연결 문자열은 Session pooler의 URI를 사용하며 SSL을 요구한다. `DATABASE_PATH`는 로컬 개발 환경의 SQLite에만 사용한다.
 
 ## 5. 테스트
 

@@ -116,8 +116,14 @@ def _validate_runtime_config(config):
             raise RuntimeError("운영 환경에는 32자 이상의 FLASK_SECRET_KEY가 필요합니다.")
         if not rp_id or not origin:
             raise RuntimeError("운영 환경에는 WEBAUTHN_RP_ID와 WEBAUTHN_ORIGIN이 필요합니다.")
-        if not config.get("PASSKEY_INVITE_TOKENS"):
-            raise RuntimeError("운영 환경에는 계정별 PASSKEY_INVITE_TOKENS 설정이 필요합니다.")
+        invite_tokens = config.get("PASSKEY_INVITE_TOKENS") or {}
+        if set(invite_tokens) != set(ACCOUNT_NAMES):
+            raise RuntimeError("운영 환경에는 Account A/B 각각의 PASSKEY_INVITE_TOKENS가 필요합니다.")
+        if not config.get("DATABASE_PATH"):
+            raise RuntimeError("운영 환경에는 영속 저장소를 가리키는 DATABASE_PATH가 필요합니다.")
+
+    if not config.get("DATABASE_PATH"):
+        config["DATABASE_PATH"] = str(BASE_DIR / "instance" / "passkeys.sqlite3")
 
     if not secret_key:
         config["SECRET_KEY"] = secrets.token_hex(32)
@@ -356,10 +362,7 @@ def create_app(test_config=None):
         SECRET_KEY=os.environ.get("FLASK_SECRET_KEY"),
         WEBAUTHN_RP_ID=os.environ.get("WEBAUTHN_RP_ID"),
         WEBAUTHN_ORIGIN=os.environ.get("WEBAUTHN_ORIGIN"),
-        DATABASE_PATH=os.environ.get(
-            "DATABASE_PATH",
-            str(BASE_DIR / "instance" / "passkeys.sqlite3"),
-        ),
+        DATABASE_PATH=os.environ.get("DATABASE_PATH"),
         PASSKEY_INVITE_TOKENS=_invite_tokens_from_env(),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",

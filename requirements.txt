@@ -14,3 +14,4 @@ pyOpenSSL==26.4.0
 webauthn==3.0.1
 Werkzeug==3.1.9
 gunicorn==23.0.0
+psycopg[binary]>=3.2,<4

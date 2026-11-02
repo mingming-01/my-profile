@@ -201,6 +201,19 @@ def init_db(app):
 
             CREATE INDEX IF NOT EXISTS idx_auth_attempts_key_time
                 ON auth_attempts(attempt_key, created_at);
+
+            CREATE TABLE IF NOT EXISTS webauthn_challenges (
+                challenge_hash TEXT PRIMARY KEY,
+                ceremony TEXT NOT NULL,
+                challenge TEXT NOT NULL,
+                username TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                consumed_at REAL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_created
+                ON webauthn_challenges(created_at);
             """
         )
         connection.commit()
@@ -251,6 +264,72 @@ def allow_attempt(username: str, action: str, limit: int = RATE_LIMIT_MAX_ATTEMP
     )
     db.commit()
     return True
+
+
+def issue_webauthn_challenge(db, ceremony: str, username: str, challenge: bytes, payload: dict):
+    encoded_challenge = b64e(challenge)
+    challenge_hash = hashlib.sha256(challenge).hexdigest()
+    current_time = time.time()
+
+    db.execute(
+        "DELETE FROM webauthn_challenges WHERE created_at < ?",
+        (current_time - 86400,),
+    )
+    db.execute(
+        """
+        INSERT INTO webauthn_challenges
+            (challenge_hash, ceremony, challenge, username, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            challenge_hash,
+            ceremony,
+            encoded_challenge,
+            username,
+            json.dumps(payload, ensure_ascii=False),
+            current_time,
+        ),
+    )
+    db.commit()
+    return challenge_hash
+
+
+def consume_webauthn_challenge(db, challenge_hash: str, ceremony: str):
+    if not isinstance(challenge_hash, str) or not challenge_hash:
+        return None
+
+    current_time = time.time()
+    db.execute("BEGIN IMMEDIATE")
+    row = db.execute(
+        """
+        SELECT challenge, payload_json, created_at
+        FROM webauthn_challenges
+        WHERE challenge_hash = ? AND ceremony = ? AND consumed_at IS NULL
+        """,
+        (challenge_hash, ceremony),
+    ).fetchone()
+
+    if not row or current_time - row["created_at"] > CHALLENGE_TTL_SECONDS:
+        db.rollback()
+        return None
+
+    cursor = db.execute(
+        """
+        UPDATE webauthn_challenges
+        SET consumed_at = ?
+        WHERE challenge_hash = ? AND consumed_at IS NULL
+        """,
+        (current_time, challenge_hash),
+    )
+    if cursor.rowcount != 1:
+        db.rollback()
+        return None
+
+    db.commit()
+    return {
+        "challenge": row["challenge"],
+        "payload": json.loads(row["payload_json"]),
+    }
 
 
 def json_error(message, status):
@@ -401,13 +480,14 @@ def create_app(test_config=None):
             mode = "bootstrap"
             user_handle = user["user_handle"] if user else b64e(secrets.token_bytes(32))
 
+        registration_challenge = secrets.token_bytes(32)
         options = generate_registration_options(
             rp_id=app.config["WEBAUTHN_RP_ID"],
             rp_name="Ming Personal Profile",
             user_id=b64d(user_handle),
             user_name=username,
             user_display_name=(display_name.strip() or username),
-            challenge=secrets.token_bytes(32),
+            challenge=registration_challenge,
             timeout=60000,
             attestation=AttestationConveyancePreference.NONE,
             authenticator_selection=AuthenticatorSelectionCriteria(
@@ -423,27 +503,38 @@ def create_app(test_config=None):
             ],
         )
 
-        session["registration"] = {
-            "username": username,
-            "display_name": display_name.strip() or username,
-            "passkey_name": passkey_name,
-            "user_handle": user_handle,
-            "mode": mode,
-            "challenge": b64e(options.challenge),
-            "issued_at": time.time(),
-        }
+        challenge_hash = issue_webauthn_challenge(
+            db,
+            "registration",
+            username,
+            options.challenge,
+            {
+                "username": username,
+                "display_name": display_name.strip() or username,
+                "passkey_name": passkey_name,
+                "user_handle": user_handle,
+                "mode": mode,
+            },
+        )
+        session["registration"] = {"challenge_hash": challenge_hash}
 
         return jsonify(json.loads(options_to_json(options)))
 
     @app.post("/api/passkey/register/verify")
     def registration_verify():
-        pending = session.pop("registration", None)
-        if not pending:
+        pending_session = session.pop("registration", None)
+        if not pending_session:
             return json_error("진행 중인 등록 요청이 없습니다. 새 요청을 시작하세요.", 400)
 
-        if time.time() - pending.get("issued_at", 0) > CHALLENGE_TTL_SECONDS:
-            return json_error("등록 요청 시간이 만료되었습니다. 다시 시도하세요.", 400)
+        challenge_state = consume_webauthn_challenge(
+            get_db(),
+            pending_session.get("challenge_hash"),
+            "registration",
+        )
+        if not challenge_state:
+            return json_error("등록 challenge가 만료되었거나 이미 사용되었습니다.", 400)
 
+        pending = challenge_state["payload"]
         credential = request.get_json(silent=True)
         if not isinstance(credential, dict):
             return json_error("등록 응답 형식이 올바르지 않습니다.", 400)
@@ -456,7 +547,7 @@ def create_app(test_config=None):
         try:
             verification = verify_registration_response(
                 credential=credential,
-                expected_challenge=b64d(pending["challenge"]),
+                expected_challenge=b64d(challenge_state["challenge"]),
                 expected_rp_id=app.config["WEBAUTHN_RP_ID"],
                 expected_origin=app.config["WEBAUTHN_ORIGIN"],
                 require_user_verification=True,
@@ -587,9 +678,10 @@ def create_app(test_config=None):
         if not passkeys:
             return json_error("계정 또는 등록된 Passkey를 확인할 수 없습니다.", 401)
 
+        authentication_challenge = secrets.token_bytes(32)
         options = generate_authentication_options(
             rp_id=app.config["WEBAUTHN_RP_ID"],
-            challenge=secrets.token_bytes(32),
+            challenge=authentication_challenge,
             allow_credentials=[
                 PublicKeyCredentialDescriptor(id=b64d(row["credential_id"]))
                 for row in passkeys
@@ -598,23 +690,32 @@ def create_app(test_config=None):
             timeout=60000,
         )
 
-        session["authentication"] = {
-            "username": username,
-            "challenge": b64e(options.challenge),
-            "issued_at": time.time(),
-        }
+        challenge_hash = issue_webauthn_challenge(
+            db,
+            "authentication",
+            username,
+            options.challenge,
+            {"username": username},
+        )
+        session["authentication"] = {"challenge_hash": challenge_hash}
 
         return jsonify(json.loads(options_to_json(options)))
 
     @app.post("/api/passkey/login/verify")
     def authentication_verify():
-        pending = session.pop("authentication", None)
-        if not pending:
+        pending_session = session.pop("authentication", None)
+        if not pending_session:
             return json_error("진행 중인 로그인 요청이 없습니다. 다시 시도하세요.", 400)
 
-        if time.time() - pending.get("issued_at", 0) > CHALLENGE_TTL_SECONDS:
-            return json_error("로그인 요청 시간이 만료되었습니다. 다시 시도하세요.", 400)
+        challenge_state = consume_webauthn_challenge(
+            get_db(),
+            pending_session.get("challenge_hash"),
+            "authentication",
+        )
+        if not challenge_state:
+            return json_error("로그인 challenge가 만료되었거나 이미 사용되었습니다.", 400)
 
+        pending = challenge_state["payload"]
         credential = request.get_json(silent=True)
         if not isinstance(credential, dict):
             return json_error("인증 응답 형식이 올바르지 않습니다.", 400)
@@ -643,7 +744,7 @@ def create_app(test_config=None):
         try:
             verification = verify_authentication_response(
                 credential=credential,
-                expected_challenge=b64d(pending["challenge"]),
+                expected_challenge=b64d(challenge_state["challenge"]),
                 expected_rp_id=app.config["WEBAUTHN_RP_ID"],
                 expected_origin=app.config["WEBAUTHN_ORIGIN"],
                 credential_public_key=b64d(stored["public_key"]),

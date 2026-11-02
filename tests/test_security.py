@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sqlite3
 import tempfile
@@ -138,10 +139,19 @@ class PasskeySecurityTests(unittest.TestCase):
         )
         self.assertEqual(options.status_code, 200)
 
+        with self.client.session_transaction() as browser_session:
+            original_challenge_hash = browser_session["registration"]["challenge_hash"]
+
         verified = self.post("/api/passkey/register/verify", {"id": "mock"})
         self.assertEqual(verified.status_code, 200)
         self.assertTrue(verified.get_json()["ok"])
         self.assertEqual(self.client.get("/api/private").status_code, 200)
+
+        # Replaying an older signed session cookie must not resurrect a consumed challenge.
+        with self.client.session_transaction() as browser_session:
+            browser_session["registration"] = {"challenge_hash": original_challenge_hash}
+        replayed_challenge = self.post("/api/passkey/register/verify", {"id": "mock"})
+        self.assertEqual(replayed_challenge.status_code, 400)
 
         self.post("/api/logout", {})
         replay = self.post(
@@ -164,17 +174,31 @@ class PasskeySecurityTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_expired_registration_challenge_is_rejected_and_consumed(self):
+    def test_expired_registration_challenge_is_rejected(self):
+        challenge_hash = hashlib.sha256(b"expired-challenge").hexdigest()
+        connection = self.db_connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO webauthn_challenges
+                    (challenge_hash, ceremony, challenge, username, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    challenge_hash,
+                    "registration",
+                    "ZXhwaXJlZC1jaGFsbGVuZ2U",
+                    "account-a",
+                    "{}",
+                    time.time() - 500,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
         with self.client.session_transaction() as browser_session:
-            browser_session["registration"] = {
-                "username": "account-a",
-                "display_name": "Account A",
-                "passkey_name": "Old challenge",
-                "user_handle": "dXNlci1oYW5kbGU",
-                "mode": "bootstrap",
-                "challenge": "Y2hhbGxlbmdl",
-                "issued_at": time.time() - 500,
-            }
+            browser_session["registration"] = {"challenge_hash": challenge_hash}
 
         response = self.post("/api/passkey/register/verify", {"id": "mock"})
         self.assertEqual(response.status_code, 400)

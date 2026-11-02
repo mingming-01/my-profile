@@ -16,7 +16,7 @@
 | SEC-02 | 높음 | 운영 환경에서 고정된 개발용 SECRET_KEY로 대체될 수 있음 | 운영 환경 Secret Key 필수화 및 시작 시 검증 |
 | SEC-03 | 높음 | Passkey 이름을 `innerHTML`에 삽입해 저장형 XSS 가능 | DOM 요소 생성과 `textContent` 사용 |
 | SEC-04 | 중간 | challenge 만료 시간이 서버에서 검증되지 않음 | 서버 발급 시각을 저장하고 180초 후 만료 |
-| SEC-05 | 중간 | JSON 파일 직접 쓰기로 동시성·손상·배포 저장소 문제가 있음 | SQLite 트랜잭션 및 영속 저장 경로 사용 |
+| SEC-05 | 중간 | JSON 파일 직접 쓰기로 동시성·손상·배포 저장소 문제가 있음 | 로컬 SQLite와 운영 PostgreSQL 분리, 트랜잭션 저장 |
 | SEC-06 | 중간 | 상태 변경 API에 Origin 확인이 없음 | 설정된 WebAuthn Origin과 요청 Origin 비교 |
 | SEC-07 | 중간 | 로그인·등록 시도 제한과 보안 헤더가 부족함 | 계정/IP 기반 기본 제한, CSP 및 보안 헤더 |
 | SEC-08 | 중간 | 세션 만료·인증 상태 초기화·Passkey 삭제 보호가 부족함 | 세션 초기화, 제한된 세션 수명, 재인증, 마지막 Passkey 삭제 방지 |
@@ -63,9 +63,9 @@
 기존 구현은 WebAuthn 옵션에 60초 timeout을 전달했지만 서버가 자체적으로 요청 발급 시각을 검사하지는 않았다.
 
 **개선 사항**
-- challenge 값과 발급 시각, 계정, ceremony 유형을 SQLite `webauthn_challenges` 테이블에 저장한다.
+- challenge 값과 발급 시각, 계정, ceremony 유형을 `webauthn_challenges` 테이블에 저장한다. 로컬은 SQLite, 운영은 PostgreSQL을 사용한다.
 - 브라우저 세션에는 challenge 자체가 아니라 challenge hash만 보관한다.
-- 검증 시 SQLite 트랜잭션으로 challenge를 원자적으로 소비한다.
+- 검증 시 DB 트랜잭션으로 challenge를 원자적으로 소비한다. PostgreSQL에서는 조건부 UPDATE ... RETURNING을 사용한다.
 - 180초가 지난 challenge는 거부한다.
 - 이전에 서명된 세션 쿠키를 다시 제출해도 이미 소비된 challenge는 재사용할 수 없다.
 - 인증·등록 실패 시 내부 예외 상세를 브라우저에 반환하지 않는다.
@@ -75,10 +75,10 @@
 기존 코드는 `auth.json`에 데이터를 직접 덮어쓰는 방식이었다. 동시 요청이 발생하거나 파일이 손상되면 저장 데이터가 유실될 수 있었고, 배포 플랫폼의 로컬 파일시스템이 영속 저장을 보장하는지도 확인되지 않았다.
 
 **개선 사항**
-- SQLite 테이블로 사용자와 Passkey를 분리했다.
+- SQLite(로컬) 또는 PostgreSQL(운영) 테이블로 사용자와 Passkey를 분리했다.
 - 외래키, 트랜잭션, busy timeout, WAL 모드를 사용한다.
-- DB 경로를 `DATABASE_PATH` 환경변수로 설정한다.
-- Render에서는 영속 디스크를 연결한 경우에만 해당 마운트 경로를 DB 경로로 지정한다.
+- 로컬 개발은 `DATABASE_PATH` 환경변수로 SQLite 파일 경로를 지정한다.
+- 운영 환경은 `DATABASE_URL`로 PostgreSQL에 연결한다. Render Free의 임시 파일시스템에 Passkey DB를 두지 않는다.
 
 기존 `data/auth.json`의 자격 증명은 등록 계정 소유권을 검증할 수 없으므로 자동 이관하지 않는다. 보안 개선 후에는 초대 코드로 각 계정의 Passkey를 다시 등록해야 한다. 기존 파일은 백업·검토 전까지 직접 삭제하지 않는다.
 
@@ -111,7 +111,7 @@
 - HTTPS 운영 환경 HSTS
 
 ### 저장
-SQLite에 저장하는 정보:
+DB에 저장하는 정보 (로컬 SQLite / 운영 PostgreSQL):
 - 계정 식별자와 WebAuthn user handle
 - Credential ID
 - Credential Public Key
@@ -131,7 +131,8 @@ Passkey의 개인키는 인증기기에서 관리하며 서버 DB에 저장하�
 | `WEBAUTHN_RP_ID` | 실제 도메인만 입력 | `my-profile-ohhl.onrender.com` |
 | `WEBAUTHN_ORIGIN` | 브라우저에서 접속하는 정확한 HTTPS Origin | `https://my-profile-ohhl.onrender.com` |
 | `PASSKEY_INVITE_TOKENS` | 최초 등록 코드 JSON | 계정별 `secrets.token_urlsafe(32)` 결과 사용 |
-| `DATABASE_PATH` | SQLite 저장 경로 | 영속 디스크 연결 시 `/var/data/passkeys.sqlite3` |
+| `DATABASE_URL` | 운영 PostgreSQL 연결 문자열 | Supabase Connect 메뉴의 Session pooler URI |
+| `DATABASE_PATH` | 로컬 SQLite 파일 경로 | 기본값 `instance/passkeys.sqlite3` (개발용) |
 
 초대 코드 생성 예시:
 
@@ -150,7 +151,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 위 예시의 설명 문구를 실제 생성한 난수 값으로 교체한다. 실제 코드를 GitHub, README, 화면 코드 또는 공개 이슈에 올리지 않는다.
 
-Render에서 `/var/data`를 영속 디스크 마운트 경로로 사용하는 경우에만 `DATABASE_PATH=/var/data/passkeys.sqlite3`를 설정한다. 영속 디스크가 없다면 재배포·재시작 후 Passkey 등록 데이터가 사라질 수 있다.
+운영 환경에서는 Render에 `DATABASE_URL`을 설정하고 Supabase PostgreSQL 연결 문자열을 사용한다. 연결 문자열은 Session pooler의 URI를 사용하며 SSL을 요구한다. `DATABASE_PATH`는 로컬 개발 환경의 SQLite에만 사용한다.
 
 ## 5. 테스트
 
@@ -179,7 +180,7 @@ GitHub Actions의 `.github/workflows/tests.yml`에서도 동일한 테스트를 
 
 ## 6. 남은 검증 및 제한 사항
 
-이 점검은 저장소의 코드와 테스트를 대상으로 한 정적·단위 수준의 점검이다. 실제 배포 환경에서의 브라우저·기기 조합별 WebAuthn 등록/인증 테스트, Render 환경변수 확인, 영속 디스크 연결 확인, 백업·복구 테스트와 외부 침투 테스트를 대신하지 않는다.
+이 점검은 저장소의 코드와 테스트를 대상으로 한 정적·단위 수준의 점검이다. 실제 배포 환경에서의 브라우저·기기 조합별 WebAuthn 등록/인증 테스트, Render 환경변수 확인, Supabase PostgreSQL 연결 확인, 백업·복구 테스트와 외부 침투 테스트를 대신하지 않는다.
 
 또한 현재 Private Space의 Account A/B 데이터는 접근통제 시연을 위한 고정 샘플 데이터다. 실제 민감정보를 저장하는 개인 비밀번호 보관함이나 범용 비밀 저장소로 소개해서는 안 된다.
 
@@ -187,7 +188,7 @@ WebAuthn 등록은 attestation `none`을 사용하므로 특정 제조사 또는
 
 **운영 배포 전 확인이 필요한 항목**
 1. Render에 Secret Key, RP ID, Origin, 계정별 초대 코드가 올바르게 설정되어 있는지
-2. 데이터베이스 파일이 영속 디스크에 저장되는지
+2. Render의 `DATABASE_URL`이 Supabase PostgreSQL에 연결되고 DB 백업·복구가 가능한지
 3. 기존 Passkey 등록을 종료하고 초대 코드를 이용해 재등록했는지
 4. Chrome/Edge와 실제 기기에서 새 등록, 로그인, 추가 등록, 삭제, 로그아웃을 확인했는지
 5. XSS 입력 문자열이 코드로 실행되지 않고 텍스트로만 표시되는지

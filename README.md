@@ -176,7 +176,7 @@ QR/바코드를 활용한 실시간 재고 관리 시스템 팀 프로젝트입�
 1. 최초 등록에는 계정별 1회용 초대 코드가 필요합니다.
 2. 브라우저가 기기의 Passkey로 WebAuthn 등록 응답을 생성합니다.
 3. Flask 서버는 challenge, RP ID, Origin, 사용자 검증 결과를 확인합니다.
-4. 서버는 Credential ID와 공개키 등 검증에 필요한 정보를 SQLite에 저장합니다.
+4. 서버는 Credential ID와 공개키 등 검증에 필요한 정보를 DB에 저장합니다(SQLite 로컬 개발 / PostgreSQL 운영).
 5. 로그인 시 서버가 새 challenge를 만들고, 저장된 공개키를 이용해 서명을 검증합니다.
 6. 인증 성공 후 서버 세션에 로그인 계정을 기록하고 해당 계정의 Private Space를 제공합니다.
 7. Passkey를 추가하거나 삭제할 때는 기존 Passkey로 기기 인증을 다시 확인합니다.
@@ -194,13 +194,13 @@ QR/바코드를 활용한 실시간 재고 관리 시스템 팀 프로젝트입�
 - Passkey 관리 화면에서 사용자 입력을 HTML로 해석하지 않고 텍스트로 출력
 - CSP nonce와 주요 보안 응답 헤더 적용
 - Passkey 추가·삭제 시 최근 인증 확인, 마지막 Passkey 삭제 방지
-- SQLite 트랜잭션을 이용한 계정·Passkey 저장
+- SQLite 트랜잭션 또는 PostgreSQL 트랜잭션을 이용한 계정·Passkey 저장
 
 ### 데이터와 운영 환경
 
 Passkey 개인키는 기기에서 관리하며 서버에는 공개키와 Credential ID, Sign Count 등의 정보만 저장합니다. 계정 A/B에 표시되는 Private 데이터는 기능 시연을 위한 샘플입니다.
 
-운영 환경에서는 `FLASK_SECRET_KEY`, `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`, `PASSKEY_INVITE_TOKENS`, `DATABASE_PATH`를 별도로 설정해야 합니다. Render에서 SQLite 데이터를 배포 후에도 유지하려면 영속 디스크를 연결하고 DB 파일을 해당 마운트 경로에 저장해야 합니다.
+운영 환경에서는 `FLASK_SECRET_KEY`, `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`, `PASSKEY_INVITE_TOKENS`, `DATABASE_URL`을 별도로 설정해야 합니다. Render 운영 DB는 Supabase PostgreSQL을 사용하며, 연결 문자열은 Render 서버 환경변수에만 저장합니다. 로컬 개발은 `DATABASE_URL`이 없으면 `DATABASE_PATH`의 SQLite를 사용합니다.
 
 로컬 실행은 다음과 같이 준비합니다.
 
